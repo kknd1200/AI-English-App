@@ -693,7 +693,6 @@ async function createAITodayTopic({ child, currentTitle = "", category = "" }) {
   if (!process.env.OPENAI_API_KEY) {
     return createMockTodayTopic({ child, currentTitle, category });
   }
-const categoryInfo = getCategoryInstruction(category);
 const prompt = `
 너는 초등학생용 AI 영어회화 앱의 상황극 주제 생성기다.
 
