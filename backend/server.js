@@ -471,6 +471,68 @@ function getCategoryInstruction(category = "") {
   );
 }
 
+function getCategoryInstruction(category = "") {
+  const map = {
+    space: {
+      label: "우주",
+      instruction:
+        "우주, 달, 화성, 우주선, 외계인, 별, 행성 같은 소재를 사용해라.",
+    },
+    dinosaur: {
+      label: "공룡",
+      instruction:
+        "공룡 공원, 티라노사우루스, 트리케라톱스, 공룡 알, 공룡 친구 같은 소재를 사용해라.",
+    },
+    animal: {
+      label: "동물",
+      instruction:
+        "동물원, 반려동물, 귀여운 동물, 동물 친구, 동물 먹이 같은 소재를 사용해라.",
+    },
+    food: {
+      label: "음식",
+      instruction:
+        "피자, 쿠키, 아이스크림, 과일, 도시락, 간식, 좋아하는 음식 같은 소재를 사용해라.",
+    },
+    amusement: {
+      label: "놀이공원",
+      instruction:
+        "놀이공원, 회전목마, 기차, 관람차, 롤러코스터, 풍선 같은 소재를 사용해라.",
+    },
+    magic: {
+      label: "마법",
+      instruction:
+        "마법 가게, 마법 지팡이, 마법 동물, 마법 주문, 마법 학교 같은 소재를 사용해라.",
+    },
+    school: {
+      label: "학교",
+      instruction:
+        "교실, 친구, 선생님, 급식, 미술 시간, 체육 시간, 준비물 같은 소재를 사용해라.",
+    },
+    friend: {
+      label: "친구",
+      instruction:
+        "친구와 놀기, 같이 먹기, 장난감 공유하기, 초대하기, 고맙다고 말하기 같은 소재를 사용해라.",
+    },
+    birthday: {
+      label: "생일",
+      instruction:
+        "생일파티, 선물, 케이크, 초대장, 친구들과 축하하기 같은 소재를 사용해라.",
+    },
+    game: {
+      label: "게임",
+      instruction:
+        "안전하고 건전한 게임, 퍼즐, 보드게임, 미니게임, 점수 얻기 같은 소재를 사용해라.",
+    },
+  };
+
+  return (
+    map[category] || {
+      label: "랜덤",
+      instruction:
+        "초등학생이 좋아할 만한 안전하고 재미있는 소재를 자유롭게 선택해라.",
+    }
+  );
+}
 function createMockTodayTopic({ child, currentTitle = "", category = "" }) {
   const topics = {
     space: [
@@ -684,9 +746,11 @@ function createMockTodayTopic({ child, currentTitle = "", category = "" }) {
 }
 
 async function createAITodayTopic({ child, currentTitle = "", category = "" }) {
-if (USE_MOCK_AI) {
-  return createMockTodayTopic({ child, currentTitle, category });
-}
+  const categoryInfo = getCategoryInstruction(category);
+
+  if (USE_MOCK_AI) {
+    return createMockTodayTopic({ child, currentTitle, category });
+  }
 
   if (!process.env.OPENAI_API_KEY) {
     return createMockTodayTopic({ child, currentTitle, category });

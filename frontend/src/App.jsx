@@ -550,7 +550,10 @@ if (aiAudioUrl) {
           key={item.id}
           type="button"
           style={categoryButton(active)}
-          onClick={() => setTopicCategory(item.id)}
+          onClick={() => {
+  setTopicCategory(item.id);
+  setStatus(`${item.label} 주제를 선택했어요. "선택 주제로 새 대화"를 눌러주세요.`);
+}}
         >
           <span>{item.emoji}</span>
           <span>{item.label}</span>
@@ -574,7 +577,7 @@ if (aiAudioUrl) {
                   onClick={() => loadTodayTopic(true)}
                   disabled={loadingTopic}
                 >
-                  {loadingTopic ? "생성 중..." : "새 주제"}
+                  {loadingTopic ? "생성 중..." : "선택 주제로 새 대화"}
                 </button>
               </div>
             </section>
