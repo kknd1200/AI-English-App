@@ -1,0 +1,182 @@
+name: Build Travel Translator APK
+
+on:
+  push:
+    branches:
+      - build-travel-translator-apk
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout trigger repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Create Android wrapper project
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/iksanarisandi/templatehtmlview.git androidapp
+          cd androidapp
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path('app/build.gradle.kts')
+          text = gradle.read_text()
+          text = text.replace('applicationId = "com.mycatatan.simple1"', 'applicationId = "com.yeohaeng.translator"')
+          text = text.replace('versionName = "1.0.0"', 'versionName = "1.0.0-mobile"')
+          gradle.write_text(text)
+
+          manifest = Path('app/src/main/AndroidManifest.xml')
+          text = manifest.read_text()
+          if 'android.permission.RECORD_AUDIO' not in text:
+              text = text.replace(
+                  '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+                  '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />'
+              )
+          text = text.replace('android:usesCleartextTraffic="true"', 'android:usesCleartextTraffic="false"')
+          manifest.write_text(text)
+
+          strings = Path('app/src/main/res/values/strings.xml')
+          if strings.exists():
+              s = strings.read_text()
+              import re
+              s = re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">여행 통역기</string>', s)
+              strings.write_text(s)
+
+          activity = Path('app/src/main/java/com/mycatatan/simple1/MainActivity.kt')
+          activity.write_text(r'''package com.mycatatan.simple1
+
+          import android.Manifest
+          import android.annotation.SuppressLint
+          import android.content.pm.PackageManager
+          import android.os.Bundle
+          import android.webkit.CookieManager
+          import android.webkit.PermissionRequest
+          import android.webkit.WebChromeClient
+          import android.webkit.WebSettings
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import androidx.activity.OnBackPressedCallback
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.app.ActivityCompat
+          import androidx.core.content.ContextCompat
+
+          class MainActivity : AppCompatActivity() {
+              private lateinit var webView: WebView
+              private val micRequestCode = 1001
+              private val siteUrl = "https://yeohaeng-translator.vercel.app/"
+
+              @SuppressLint("SetJavaScriptEnabled")
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  webView = WebView(this)
+                  setContentView(webView)
+
+                  with(webView.settings) {
+                      javaScriptEnabled = true
+                      domStorageEnabled = true
+                      databaseEnabled = true
+                      cacheMode = WebSettings.LOAD_DEFAULT
+                      loadWithOverviewMode = true
+                      useWideViewPort = true
+                      setSupportZoom(false)
+                      builtInZoomControls = false
+                      displayZoomControls = false
+                      mediaPlaybackRequiresUserGesture = false
+                      allowContentAccess = true
+                      allowFileAccess = true
+                      mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                  }
+
+                  CookieManager.getInstance().setAcceptCookie(true)
+                  CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+
+                  webView.webViewClient = WebViewClient()
+                  webView.webChromeClient = object : WebChromeClient() {
+                      override fun onPermissionRequest(request: PermissionRequest) {
+                          runOnUiThread {
+                              val wantsMic = request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                              val hasMic = ContextCompat.checkSelfPermission(
+                                  this@MainActivity,
+                                  Manifest.permission.RECORD_AUDIO
+                              ) == PackageManager.PERMISSION_GRANTED
+
+                              if (wantsMic && hasMic) {
+                                  request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                              } else {
+                                  request.deny()
+                                  if (wantsMic && !hasMic) requestMicrophonePermission()
+                              }
+                          }
+                      }
+                  }
+
+                  if (savedInstanceState == null) {
+                      webView.loadUrl(siteUrl)
+                  } else {
+                      webView.restoreState(savedInstanceState)
+                  }
+
+                  requestMicrophonePermission()
+
+                  onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                      override fun handleOnBackPressed() {
+                          if (webView.canGoBack()) webView.goBack() else finish()
+                      }
+                  })
+              }
+
+              private fun requestMicrophonePermission() {
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                      != PackageManager.PERMISSION_GRANTED
+                  ) {
+                      ActivityCompat.requestPermissions(
+                          this,
+                          arrayOf(Manifest.permission.RECORD_AUDIO),
+                          micRequestCode
+                      )
+                  }
+              }
+
+              override fun onSaveInstanceState(outState: Bundle) {
+                  webView.saveState(outState)
+                  super.onSaveInstanceState(outState)
+              }
+
+              override fun onDestroy() {
+                  webView.stopLoading()
+                  webView.destroy()
+                  super.onDestroy()
+              }
+          }
+          '''.replace('          ', ''))
+          PY
+
+      - name: Build installable debug APK
+        shell: bash
+        run: |
+          cd androidapp
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../yeohaeng-translator.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yeohaeng-translator-apk
+          path: yeohaeng-translator.apk
+          retention-days: 7
