@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Checkout trigger repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -28,141 +28,34 @@ jobs:
         shell: bash
         run: |
           git clone --depth 1 https://github.com/iksanarisandi/templatehtmlview.git androidapp
-
           python3 - <<'PY'
           from pathlib import Path
           import re
-
           gradle = Path('androidapp/app/build.gradle.kts')
           text = gradle.read_text()
           text = text.replace('applicationId = "com.mycatatan.simple1"', 'applicationId = "com.yeohaeng.translator"')
           text = text.replace('versionCode = 1', 'versionCode = 4')
           text = text.replace('versionName = "1.0.0"', 'versionName = "1.3.1-jafix"')
           gradle.write_text(text)
-
           manifest = Path('androidapp/app/src/main/AndroidManifest.xml')
           text = manifest.read_text()
           if 'android.permission.RECORD_AUDIO' not in text:
-              text = text.replace(
-                  '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
-                  '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />'
-              )
+              text = text.replace('<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />', '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />')
           if 'android.intent.action.TTS_SERVICE' not in text:
-              text = text.replace(
-                  '<application',
-                  '<queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE" />\n        </intent>\n    </queries>\n\n    <application',
-                  1
-              )
+              text = text.replace('<application', '<queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE" />\n        </intent>\n    </queries>\n\n    <application', 1)
           text = text.replace('android:usesCleartextTraffic="true"', 'android:usesCleartextTraffic="false"')
           manifest.write_text(text)
-
           strings = Path('androidapp/app/src/main/res/values/strings.xml')
           if strings.exists():
               s = strings.read_text()
               s = re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">BUNBUN</string>', s)
               strings.write_text(s)
           PY
-
           cp mobile/MainActivity.kt androidapp/app/src/main/java/com/mycatatan/simple1/MainActivity.kt
           mkdir -p androidapp/app/src/main/assets
+          cp mobile/index-bunbun-1.3.1.html androidapp/app/src/main/assets/index.html
 
-          curl -fsSL --retry 3 https://yeohaeng-translator.vercel.app/ -o androidapp/app/src/main/assets/index.html
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path('androidapp/app/src/main/assets/index.html')
-          s = p.read_text(encoding='utf-8')
-
-          def rep(old, new, required=True):
-              global s
-              if old not in s:
-                  if required:
-                      raise SystemExit('Patch target not found: ' + old[:100])
-                  return
-              s = s.replace(old, new)
-
-          rep('<title>여행 통역기 — 베트남어 · 영어</title>', '<title>BUNBUN — 여행 통역기</title>', False)
-          rep('베트남어에 한글 발음 표시', '베트남어·일본어에 한글 발음 표시', False)
-          rep("  en: { name: 'English',    bcp: 'en-US', flag: '🇺🇸' }\n};",
-              "  en: { name: 'English',    bcp: 'en-US', flag: '🇺🇸' },\n  ja: { name: '日本語',      bcp: 'ja-JP', flag: '🇯🇵' }\n};")
-
-          old_translate = """async function translate(text, from, to) {
-  if (S.engine === 'server') return translateServer(text, from, to);
-  return translateFree(text, from, to);
-}"""
-          new_translate = """const COMMON_OVERRIDES = {
-  'ko>ja': {
-    '안녕': ['こんにちは', '콘니치와'],
-    '안녕하세요': ['こんにちは', '콘니치와'],
-    '감사합니다': ['ありがとうございます', '아리가토오 고자이마스'],
-    '고마워': ['ありがとう', '아리가토오'],
-    '죄송합니다': ['すみません', '스미마센'],
-    '미안해': ['ごめんなさい', '고멘나사이'],
-    '네': ['はい', '하이'],
-    '아니요': ['いいえ', '이이에'],
-    '안녕히 가세요': ['さようなら', '사요오나라'],
-    '안녕히 계세요': ['さようなら', '사요오나라'],
-    '잘 가': ['じゃあね', '자아네']
-  }
-};
-
-function commonOverride(text, from, to) {
-  const pair = COMMON_OVERRIDES[from + '>' + to];
-  if (!pair) return null;
-  const key = String(text || '').trim().replace(/[.!?。！？]+$/g, '').trim();
-  const hit = pair[key];
-  return hit ? { text: hit[0], read: hit[1] || '' } : null;
-}
-
-function suspiciousJapanese(text) {
-  const t = String(text || '').trim();
-  if (!t) return true;
-  if (/^(?:ツァイチェン|ツァイジェン|ザイチェン|ザイジェン|ニーハオ|シエシエ|シェシェ|シェイシェイ)[。！!？?]?$/i.test(t)) return true;
-  if (/[见们这说语吗后发汉]/.test(t)) return true;
-  return false;
-}
-
-async function translate(text, from, to) {
-  const fixed = commonOverride(text, from, to);
-  if (fixed) return fixed;
-  if (S.engine === 'server') {
-    try {
-      const r = await translateServer(text, from, to);
-      if (to === 'ja' && suspiciousJapanese(r.text)) throw new Error('일본어 검증 실패');
-      return r;
-    } catch (e) {
-      if (from === 'ja' || to === 'ja') return translateFree(text, from, to);
-      throw e;
-    }
-  }
-  return translateFree(text, from, to);
-}"""
-          rep(old_translate, new_translate)
-
-          rep("return { text: j.translation, read: to === 'vi' ? (j.reading || '') : '' };",
-              "return { text: j.translation, read: (to === 'vi' || to === 'ja') ? (j.reading || '') : '' };", False)
-          rep("  if (lang === 'ko') return RE_HANGUL.test(t) && !RE_KANA.test(t);\n  if (lang === 'vi' || lang === 'en')",
-              "  if (lang === 'ko') return RE_HANGUL.test(t) && !RE_KANA.test(t);\n  if (lang === 'ja') return (RE_KANA.test(t) || RE_HAN.test(t)) && !RE_HANGUL.test(t);\n  if (lang === 'vi' || lang === 'en')")
-          rep("const MM_LOCALE = { ko: 'ko-KR', vi: 'vi-VN', en: 'en-US' };",
-              "const MM_LOCALE = { ko: 'ko-KR', vi: 'vi-VN', en: 'en-US', ja: 'ja-JP' };")
-          rep("const showRead = S.showRead && d.read && d.to === 'vi';",
-              "const showRead = S.showRead && d.read && (d.to === 'vi' || d.to === 'ja');", False)
-          rep("const showRead = S.showRead && h.read && h.to === 'vi';",
-              "const showRead = S.showRead && h.read && (h.to === 'vi' || h.to === 'ja');", False)
-          rep('여행 회화체와 베트남어 한글 발음을 지원합니다.',
-              '여행 회화체와 베트남어·일본어 음성 읽기를 지원합니다.', False)
-          rep("const t = target === 'en' ? p.en : p.vi;",
-              "const t = target === 'ja' ? '일본어 문장집은 번역 탭에서 바로 번역해 사용할 수 있어요' : (target === 'en' ? p.en : p.vi);", False)
-          rep("speak(target === 'en' ? p.en : p.vi, target);",
-              "if (target === 'ja') { setStatus('일본어 문장은 번역 탭에서 입력해 주세요'); return; }\n      speak(target === 'en' ? p.en : p.vi, target);", False)
-
-          p.write_text(s, encoding='utf-8')
-          if "'안녕': ['こんにちは'" not in s or "suspiciousJapanese" not in s or "ja-JP" not in s:
-              raise SystemExit('BUNBUN Japanese fix verification failed')
-          PY
-
-      - name: Build installable debug APK
+      - name: Build APK
         shell: bash
         run: |
           cd androidapp
