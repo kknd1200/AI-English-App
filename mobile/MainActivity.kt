@@ -13,6 +13,8 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -61,7 +63,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
 
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val url = request.url
+                if (
+                    request.method.equals("GET", ignoreCase = true) &&
+                    url.host == "yeohaeng-translator.vercel.app" &&
+                    (url.path.isNullOrEmpty() || url.path == "/" || url.path == "/index.html")
+                ) {
+                    return try {
+                        WebResourceResponse("text/html", "UTF-8", assets.open("index.html"))
+                    } catch (_: Exception) {
+                        super.shouldInterceptRequest(view, request)
+                    }
+                }
+                return super.shouldInterceptRequest(view, request)
+            }
+
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 return if (request.url.host == "yeohaeng-translator.vercel.app") {
                     false
                 } else {
@@ -146,6 +164,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             "ko" -> Locale.KOREA
             "vi" -> Locale.forLanguageTag("vi-VN")
             "en" -> Locale.US
+            "ja" -> Locale.JAPAN
             else -> Locale.forLanguageTag(lang)
         }
     }
@@ -244,6 +263,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             "ko" -> "ko-KR"
             "vi" -> "vi-VN"
             "en" -> "en-US"
+            "ja" -> "ja-JP"
             else -> lang
         }
 
