@@ -35,8 +35,8 @@ jobs:
           gradle = Path('androidapp/app/build.gradle.kts')
           text = gradle.read_text()
           text = text.replace('applicationId = "com.mycatatan.simple1"', 'applicationId = "com.yeohaeng.translator"')
-          text = text.replace('versionCode = 1', 'versionCode = 7')
-          text = text.replace('versionName = "1.0.0"', 'versionName = "1.5.1-hybrid"')
+          text = text.replace('versionCode = 1', 'versionCode = 8')
+          text = text.replace('versionName = "1.0.0"', 'versionName = "1.5.2-layoutfix"')
           if 'com.google.mlkit:translate:17.0.3' not in text:
               m = re.search(r'dependencies\s*\{', text)
               if not m:
@@ -75,11 +75,11 @@ jobs:
           cd androidapp
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
-          cp app/build/outputs/apk/debug/app-debug.apk ../BUNBUN-1.5.1-hybrid.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../BUNBUN-1.5.2-layoutfix.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BUNBUN-1.5.1-hybrid-apk
-          path: BUNBUN-1.5.1-hybrid.apk
+          name: BUNBUN-1.5.2-layoutfix-apk
+          path: BUNBUN-1.5.2-layoutfix.apk
           retention-days: 7
