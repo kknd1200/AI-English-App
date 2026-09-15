@@ -31,12 +31,20 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
+
           gradle = Path('androidapp/app/build.gradle.kts')
           text = gradle.read_text()
           text = text.replace('applicationId = "com.mycatatan.simple1"', 'applicationId = "com.yeohaeng.translator"')
-          text = text.replace('versionCode = 1', 'versionCode = 5')
-          text = text.replace('versionName = "1.0.0"', 'versionName = "1.4.0-offline"')
+          text = text.replace('versionCode = 1', 'versionCode = 6')
+          text = text.replace('versionName = "1.0.0"', 'versionName = "1.5.0-hybrid"')
+          if 'com.google.mlkit:translate:17.0.3' not in text:
+              m = re.search(r'dependencies\s*\{', text)
+              if not m:
+                  raise SystemExit('dependencies block not found')
+              insert_at = m.end()
+              text = text[:insert_at] + '\n    implementation("com.google.mlkit:translate:17.0.3")' + text[insert_at:]
           gradle.write_text(text)
+
           manifest = Path('androidapp/app/src/main/AndroidManifest.xml')
           text = manifest.read_text()
           if 'android.permission.RECORD_AUDIO' not in text:
@@ -45,15 +53,17 @@ jobs:
               text = text.replace('<application', '<queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE" />\n        </intent>\n    </queries>\n\n    <application', 1)
           text = text.replace('android:usesCleartextTraffic="true"', 'android:usesCleartextTraffic="false"')
           manifest.write_text(text)
+
           strings = Path('androidapp/app/src/main/res/values/strings.xml')
           if strings.exists():
               s = strings.read_text()
               s = re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">BUNBUN</string>', s)
               strings.write_text(s)
           PY
+
           cp mobile/MainActivity.kt androidapp/app/src/main/java/com/mycatatan/simple1/MainActivity.kt
           mkdir -p androidapp/app/src/main/assets
-          cp mobile/index-bunbun-1.4.0.html androidapp/app/src/main/assets/index.html
+          cp mobile/index-bunbun-1.5.0.html androidapp/app/src/main/assets/index.html
 
       - name: Build APK
         shell: bash
@@ -64,11 +74,11 @@ jobs:
           cd androidapp
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
-          cp app/build/outputs/apk/debug/app-debug.apk ../BUNBUN-1.4.0-offline.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../BUNBUN-1.5.0-hybrid.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BUNBUN-1.4.0-offline-apk
-          path: BUNBUN-1.4.0-offline.apk
+          name: BUNBUN-1.5.0-hybrid-apk
+          path: BUNBUN-1.5.0-hybrid.apk
           retention-days: 7
