@@ -28,29 +28,37 @@ jobs:
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
           git clone --depth 1 https://github.com/iksanarisandi/templatehtmlview.git androidapp
+
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           gradle = Path('androidapp/app/build.gradle.kts')
           text = gradle.read_text()
-          text = text.replace('applicationId = "com.mycatatan.simple1"', 'applicationId = "com.yeohaeng.translator"')
-          text = text.replace('versionCode = 1', 'versionCode = 9')
-          text = text.replace('versionName = "1.0.0"', 'versionName = "1.5.3-filipino"')
+          # New clean package: can be installed without removing older com.yeohaeng.translator builds.
+          text = text.replace('applicationId = "com.mycatatan.simple1"', 'applicationId = "com.bunbun.translator"')
+          text = text.replace('versionCode = 1', 'versionCode = 10')
+          text = text.replace('versionName = "1.0.0"', 'versionName = "1.6.0"')
           if 'com.google.mlkit:translate:17.0.3' not in text:
               m = re.search(r'dependencies\s*\{', text)
               if not m:
                   raise SystemExit('dependencies block not found')
-              insert_at = m.end()
-              text = text[:insert_at] + '\n    implementation("com.google.mlkit:translate:17.0.3")' + text[insert_at:]
+              text = text[:m.end()] + '\n    implementation("com.google.mlkit:translate:17.0.3")' + text[m.end():]
           gradle.write_text(text)
 
           manifest = Path('androidapp/app/src/main/AndroidManifest.xml')
           text = manifest.read_text()
           if 'android.permission.RECORD_AUDIO' not in text:
-              text = text.replace('<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />', '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />')
+              text = text.replace(
+                  '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+                  '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />'
+              )
           if 'android.intent.action.TTS_SERVICE' not in text:
-              text = text.replace('<application', '<queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE" />\n        </intent>\n    </queries>\n\n    <application', 1)
+              text = text.replace(
+                  '<application',
+                  '<queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE" />\n        </intent>\n    </queries>\n\n    <application',
+                  1
+              )
           text = text.replace('android:usesCleartextTraffic="true"', 'android:usesCleartextTraffic="false"')
           manifest.write_text(text)
 
@@ -63,13 +71,14 @@ jobs:
 
           cp mobile/MainActivity.kt androidapp/app/src/main/java/com/mycatatan/simple1/MainActivity.kt
 
+          # Native Filipino/Tagalog support: ML Kit offline translation + STT + TTS.
           python3 - <<'PY'
           from pathlib import Path
           p = Path('androidapp/app/src/main/java/com/mycatatan/simple1/MainActivity.kt')
           s = p.read_text(encoding='utf-8')
           s = s.replace(
               '"vi" to TranslateLanguage.VIETNAMESE\n    )',
-              '"vi" to TranslateLanguage.VIETNAMESE,\n        "tl" to "tl"\n    )'
+              '"vi" to TranslateLanguage.VIETNAMESE,\n        "tl" to TranslateLanguage.TAGALOG\n    )'
           )
           s = s.replace(
               '"ja" -> Locale.JAPAN\n            else -> Locale.forLanguageTag(lang)',
@@ -80,16 +89,32 @@ jobs:
               '"ja" -> "ja-JP"\n            "tl" -> "fil-PH"\n            else -> lang'
           )
           s = s.replace('설정에서 4개 언어팩을 먼저 다운로드해 주세요', '설정에서 5개 언어팩을 먼저 다운로드해 주세요')
-          if '"tl" to "tl"' not in s or '"tl" -> "fil-PH"' not in s:
+          if 'TranslateLanguage.TAGALOG' not in s or '"tl" -> "fil-PH"' not in s:
               raise SystemExit('Filipino native patch verification failed')
           p.write_text(s, encoding='utf-8')
           PY
 
           mkdir -p androidapp/app/src/main/assets
           cp mobile/index-bunbun-1.5.0.html androidapp/app/src/main/assets/index.html
-          python3 mobile/patch-recording-ui.py
+          python3 mobile/patch-bunbun-1.6.0.py
 
-      - name: Build APK
+          # Validate the bundled page JavaScript before compiling the APK.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s = Path('androidapp/app/src/main/assets/index.html').read_text(encoding='utf-8')
+          m = re.search(r'<script>(.*)</script>', s, re.S)
+          if not m:
+              raise SystemExit('script block missing')
+          Path('/tmp/bunbun.js').write_text(m.group(1), encoding='utf-8')
+          required = ['Filipino', 'fil-PH', '5개 언어팩', '--dock-h:250px']
+          for marker in required:
+              if marker not in s:
+                  raise SystemExit('missing marker: '+marker)
+          PY
+          node --check /tmp/bunbun.js
+
+      - name: Build installable APK
         shell: bash
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
@@ -98,11 +123,11 @@ jobs:
           cd androidapp
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
-          cp app/build/outputs/apk/debug/app-debug.apk ../BUNBUN-1.5.3-filipino.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../BUNBUN-1.6.0.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BUNBUN-1.5.3-filipino-apk
-          path: BUNBUN-1.5.3-filipino.apk
-          retention-days: 7
+          name: BUNBUN-1.6.0-apk
+          path: BUNBUN-1.6.0.apk
+          retention-days: 30
