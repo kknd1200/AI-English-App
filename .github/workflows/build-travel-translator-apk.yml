@@ -21,11 +21,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Create Android wrapper project
         shell: bash
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
           git clone --depth 1 https://github.com/iksanarisandi/templatehtmlview.git androidapp
           python3 - <<'PY'
@@ -57,6 +57,9 @@ jobs:
 
       - name: Build APK
         shell: bash
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
           cd androidapp
           chmod +x gradlew
