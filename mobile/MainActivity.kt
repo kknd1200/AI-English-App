@@ -22,6 +22,14 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.common.model.RemoteModelManager
+import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.TranslateRemoteModel
+import com.google.mlkit.nl.translate.Translation
+import com.google.mlkit.nl.translate.Translator
+import com.google.mlkit.nl.translate.TranslatorOptions
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
@@ -33,6 +41,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var speechRecognizer: SpeechRecognizer? = null
     private val micRequestCode = 1001
     private val siteUrl = "https://yeohaeng-translator.vercel.app/"
+
+    private val modelManager by lazy { RemoteModelManager.getInstance() }
+    private val translators = mutableMapOf<String, Translator>()
+    private val offlineLanguages = linkedMapOf(
+        "ko" to TranslateLanguage.KOREAN,
+        "en" to TranslateLanguage.ENGLISH,
+        "ja" to TranslateLanguage.JAPANESE,
+        "vi" to TranslateLanguage.VIETNAMESE
+    )
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -145,6 +162,180 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 try { speechRecognizer?.stopListening() } catch (_: Exception) {}
             }
         }
+
+        @JavascriptInterface
+        fun getOfflineModelStatus() {
+            queryOfflineModelStatus()
+        }
+
+        @JavascriptInterface
+        fun downloadOfflineModels(wifiOnly: Boolean) {
+            downloadAllOfflineModels(wifiOnly)
+        }
+
+        @JavascriptInterface
+        fun translateOffline(requestId: String, text: String, from: String, to: String) {
+            translateWithMlKit(requestId, text, from, to)
+        }
+    }
+
+    private fun queryOfflineModelStatus() {
+        modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
+            .addOnSuccessListener { models ->
+                val downloaded = models.map { it.language }.toSet()
+                val codes = offlineLanguages.filterValues { downloaded.contains(it) }.keys.toList()
+                val payload = JSONObject()
+                    .put("downloaded", JSONArray(codes))
+                    .put("ready", codes.size == offlineLanguages.size)
+                    .toString()
+                sendNative("ml-model-status", payload)
+            }
+            .addOnFailureListener { e ->
+                sendNative(
+                    "ml-model-error",
+                    JSONObject().put("message", e.localizedMessage ?: "언어팩 상태를 확인하지 못했어요").toString()
+                )
+            }
+    }
+
+    private fun downloadAllOfflineModels(wifiOnly: Boolean) {
+        val conditionsBuilder = DownloadConditions.Builder()
+        if (wifiOnly) conditionsBuilder.requireWifi()
+        val conditions = conditionsBuilder.build()
+        val entries = offlineLanguages.entries.toList()
+
+        modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
+            .addOnSuccessListener { existingModels ->
+                val already = existingModels.map { it.language }.toMutableSet()
+
+                fun next(index: Int) {
+                    if (index >= entries.size) {
+                        val codes = offlineLanguages.filterValues { already.contains(it) }.keys.toList()
+                        val payload = JSONObject()
+                            .put("downloaded", JSONArray(codes))
+                            .put("ready", codes.size == offlineLanguages.size)
+                            .toString()
+                        sendNative("ml-model-complete", payload)
+                        return
+                    }
+
+                    val entry = entries[index]
+                    val code = entry.key
+                    val language = entry.value
+                    val doneBefore = offlineLanguages.values.count { already.contains(it) }
+
+                    sendNative(
+                        "ml-model-progress",
+                        JSONObject()
+                            .put("done", doneBefore)
+                            .put("total", entries.size)
+                            .put("current", code)
+                            .put("downloaded", JSONArray(offlineLanguages.filterValues { already.contains(it) }.keys.toList()))
+                            .toString()
+                    )
+
+                    if (already.contains(language)) {
+                        next(index + 1)
+                        return
+                    }
+
+                    val model = TranslateRemoteModel.Builder(language).build()
+                    modelManager.download(model, conditions)
+                        .addOnSuccessListener {
+                            already.add(language)
+                            sendNative(
+                                "ml-model-progress",
+                                JSONObject()
+                                    .put("done", offlineLanguages.values.count { already.contains(it) })
+                                    .put("total", entries.size)
+                                    .put("current", code)
+                                    .put("downloaded", JSONArray(offlineLanguages.filterValues { already.contains(it) }.keys.toList()))
+                                    .toString()
+                            )
+                            next(index + 1)
+                        }
+                        .addOnFailureListener { e ->
+                            val msg = if (wifiOnly) {
+                                "언어팩 다운로드에 실패했어요. Wi-Fi 연결을 확인해 주세요. ${e.localizedMessage ?: ""}".trim()
+                            } else {
+                                "언어팩 다운로드에 실패했어요. ${e.localizedMessage ?: ""}".trim()
+                            }
+                            sendNative(
+                                "ml-model-error",
+                                JSONObject().put("message", msg).put("current", code).toString()
+                            )
+                        }
+                }
+
+                next(0)
+            }
+            .addOnFailureListener { e ->
+                sendNative(
+                    "ml-model-error",
+                    JSONObject().put("message", e.localizedMessage ?: "언어팩 목록을 읽지 못했어요").toString()
+                )
+            }
+    }
+
+    private fun translateWithMlKit(requestId: String, text: String, from: String, to: String) {
+        if (text.isBlank()) {
+            sendMlTranslateError(requestId, "번역할 문장이 비어 있어요")
+            return
+        }
+        if (from == to) {
+            sendMlTranslateResult(requestId, text)
+            return
+        }
+
+        val source = offlineLanguages[from.substringBefore('-').lowercase(Locale.ROOT)]
+        val target = offlineLanguages[to.substringBefore('-').lowercase(Locale.ROOT)]
+        if (source == null || target == null) {
+            sendMlTranslateError(requestId, "지원하지 않는 언어예요")
+            return
+        }
+
+        modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
+            .addOnSuccessListener { models ->
+                val downloaded = models.map { it.language }.toSet()
+                if (!downloaded.contains(source) || !downloaded.contains(target)) {
+                    sendMlTranslateError(requestId, "오프라인 언어팩이 아직 없어요. 설정에서 4개 언어팩을 먼저 다운로드해 주세요")
+                    return@addOnSuccessListener
+                }
+
+                val key = "$source>$target"
+                val translator = translators.getOrPut(key) {
+                    val options = TranslatorOptions.Builder()
+                        .setSourceLanguage(source)
+                        .setTargetLanguage(target)
+                        .build()
+                    Translation.getClient(options)
+                }
+
+                translator.translate(text)
+                    .addOnSuccessListener { translated ->
+                        sendMlTranslateResult(requestId, translated)
+                    }
+                    .addOnFailureListener { e ->
+                        sendMlTranslateError(requestId, e.localizedMessage ?: "기기 AI 번역에 실패했어요")
+                    }
+            }
+            .addOnFailureListener { e ->
+                sendMlTranslateError(requestId, e.localizedMessage ?: "언어팩 상태를 확인하지 못했어요")
+            }
+    }
+
+    private fun sendMlTranslateResult(requestId: String, translated: String) {
+        sendNative(
+            "ml-translate-result",
+            JSONObject().put("id", requestId).put("text", translated).toString()
+        )
+    }
+
+    private fun sendMlTranslateError(requestId: String, message: String) {
+        sendNative(
+            "ml-translate-error",
+            JSONObject().put("id", requestId).put("message", message).toString()
+        )
     }
 
     override fun onInit(status: Int) {
@@ -194,7 +385,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             text,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            "travel-tts-${System.currentTimeMillis()}"
+            "bunbun-tts-${System.currentTimeMillis()}"
         )
         if (result == TextToSpeech.ERROR) sendNative("tts-error", "speak")
     }
@@ -238,20 +429,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     }
 
                     override fun onResults(results: Bundle?) {
-                        val text = results
+                        val resultText = results
                             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             ?.firstOrNull()
                             .orEmpty()
-                        if (text.isNotBlank()) sendNative("stt-result", text)
+                        if (resultText.isNotBlank()) sendNative("stt-result", resultText)
                         sendNative("stt-end", "")
                     }
 
                     override fun onPartialResults(partialResults: Bundle?) {
-                        val text = partialResults
+                        val resultText = partialResults
                             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             ?.firstOrNull()
                             .orEmpty()
-                        if (text.isNotBlank()) sendNative("stt-partial", text)
+                        if (resultText.isNotBlank()) sendNative("stt-partial", resultText)
                     }
 
                     override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -312,6 +503,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         try { speechRecognizer?.destroy() } catch (_: Exception) {}
+        translators.values.forEach { translator ->
+            try { translator.close() } catch (_: Exception) {}
+        }
+        translators.clear()
         if (::tts.isInitialized) {
             try { tts.stop() } catch (_: Exception) {}
             try { tts.shutdown() } catch (_: Exception) {}
