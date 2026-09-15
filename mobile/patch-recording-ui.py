@@ -8,6 +8,15 @@ s = s.replace(
     '<title>BUNBUN 1.5.2 — 온라인 + 기기 AI 오프라인 통역기</title>'
 )
 
+# --- Filipino/Tagalog language support ---
+old_langs = "const LANGS={ko:{name:'한국어',bcp:'ko-KR',flag:'🇰🇷'},vi:{name:'Tiếng Việt',bcp:'vi-VN',flag:'🇻🇳'},en:{name:'English',bcp:'en-US',flag:'🇺🇸'},ja:{name:'日本語',bcp:'ja-JP',flag:'🇯🇵'}};"
+new_langs = "const LANGS={ko:{name:'한국어',bcp:'ko-KR',flag:'🇰🇷'},vi:{name:'Tiếng Việt',bcp:'vi-VN',flag:'🇻🇳'},en:{name:'English',bcp:'en-US',flag:'🇺🇸'},ja:{name:'日本語',bcp:'ja-JP',flag:'🇯🇵'},tl:{name:'Filipino',bcp:'fil-PH',flag:'🇵🇭'}};"
+if old_langs in s:
+    s = s.replace(old_langs, new_langs, 1)
+
+s = s.replace('한국어·영어·일본어·베트남어 다운로드', '한국어·영어·일본어·베트남어·필리핀어 다운로드')
+s = s.replace('설정에서 4개 언어팩을 먼저 다운로드해 주세요', '설정에서 5개 언어팩을 먼저 다운로드해 주세요')
+
 # --- Recording state UI ---
 css_anchor = '.mic.me .sub{color:#d4f8ff}'
 css_patch = r'''.mic.me .sub{color:#d4f8ff}.mic.rec{position:relative;animation:recordPulse .85s ease-in-out infinite;background:linear-gradient(180deg,#dc2626,#8f1520)!important;border:2px solid #ff7b86!important;box-shadow:0 0 0 4px rgba(239,68,68,.24),0 0 26px rgba(239,68,68,.75);color:#fff;transform:scale(1.025)}.mic.rec .ic{animation:micBeat .85s ease-in-out infinite;filter:drop-shadow(0 0 8px rgba(255,255,255,.7))}.mic.rec .sub{color:#fff!important;font-weight:900}.mic.rec::after{content:'REC';position:absolute;top:7px;right:9px;background:#fff;color:#b91c1c;border-radius:999px;padding:2px 7px;font-size:9px;font-weight:1000;letter-spacing:.7px}@keyframes recordPulse{0%,100%{box-shadow:0 0 0 3px rgba(239,68,68,.18),0 0 14px rgba(239,68,68,.5)}50%{box-shadow:0 0 0 7px rgba(239,68,68,.32),0 0 34px rgba(239,68,68,.95)}}@keyframes micBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}'''
@@ -72,11 +81,12 @@ required = [
     '--dock-h:250px',
     'function updateDockInset()',
     'function scrollBubbleIntoView',
-    'scrollBubbleIntoView(el)'
+    'scrollBubbleIntoView(el)',
+    "tl:{name:'Filipino',bcp:'fil-PH',flag:'🇵🇭'}"
 ]
 for marker in required:
     if marker not in s:
         raise SystemExit(f'patch verification failed: {marker}')
 
 p.write_text(s, encoding='utf-8')
-print('BUNBUN 1.5.2 recording + layout patch applied')
+print('BUNBUN 1.5.2 recording + layout + Filipino patch applied')
